@@ -58,6 +58,7 @@ type Options struct {
 	Save      func(config.Resources) error // persists a changed config (config.json); nil = memory only
 	Slots     *slots.Manager               // sizes follow the config; nil = no slots
 	Sys       Sys                          // nil = this machine
+	TempDir   string                       // the temp folder whose volume is watched; "" = the OS temp dir
 	Now       func() time.Time
 	Logger    *slog.Logger
 }
@@ -91,6 +92,7 @@ type Manager struct {
 	cost        Cost
 	totalMs     float64
 	wake        chan struct{}
+	prot        protectState
 }
 
 type procPrev struct {
@@ -114,7 +116,8 @@ func New(o Options) *Manager {
 	cfg.Normalize()
 	m := &Manager{opts: o, sys: o.Sys, log: o.Logger, cfg: cfg, led: ledger{}.fill(),
 		prev: map[int]procPrev{}, prevDisks: map[string]sysinfo.Disk{}, diskTurns: map[string]time.Time{},
-		history: History{Agents: map[string][]Point{}}, wake: make(chan struct{}, 1)}
+		history: History{Agents: map[string][]Point{}}, wake: make(chan struct{}, 1),
+		prot: protectState{vols: map[string]*volState{}, read: map[string]volReading{}, braked: map[string]time.Time{}}}
 	if o.Slots != nil {
 		o.Slots.SetSizes(cfg.Slots)
 	}
@@ -259,7 +262,10 @@ func (m *Manager) Admit(running int) (bool, string) {
 		return false, fmt.Sprintf("%d of %d agents running", running, c.MaxAgents)
 	}
 	free := m.sample.Machine.MemFree
-	fresh := !m.sampled.IsZero() && m.opts.Now().Sub(m.sampled) < 3*time.Duration(c.SampleSecs)*time.Second
+	fresh := m.freshLocked()
+	if why := m.admitBlockLocked(); why != "" {
+		return false, why
+	}
 	if c.MinFreeRAMMB > 0 && free > 0 && fresh {
 		left := int64(free) - int64(m.admitted)*admitReserve
 		if left < int64(c.MinFreeRAMMB)*MB {
@@ -268,6 +274,11 @@ func (m *Manager) Admit(running int) (bool, string) {
 	}
 	m.admitted++
 	return true, ""
+}
+
+// freshLocked: the last sample is recent enough to admit on.
+func (m *Manager) freshLocked() bool {
+	return !m.sampled.IsZero() && m.opts.Now().Sub(m.sampled) < 3*time.Duration(m.cfg.SampleSecs)*time.Second
 }
 
 // LowPriority implements fleet.Resources.
@@ -294,6 +305,8 @@ func (m *Manager) Resumed(agentID, reason string, raise bool) {
 		m.led.MemOK[agentID] = true
 	case BrakeDisk:
 		delete(m.diskTurns, agentID)
+	case BrakeMemGuard:
+		delete(m.prot.braked, agentID)
 	}
 	delete(m.led.Paused, agentID)
 	m.dirty = true
@@ -302,7 +315,7 @@ func (m *Manager) Resumed(agentID, reason string, raise bool) {
 // View is GET /api/resources.
 func (m *Manager) View() View {
 	m.mu.Lock()
-	v := View{Config: m.cfg.Clone(), Sample: cloneSample(m.sample), Cost: m.cost,
+	v := View{Config: m.cfg.Clone(), Sample: cloneSample(m.sample), Cost: m.cost, Protect: m.protectViewLocked(),
 		History: History{Machine: append([]Point(nil), m.history.Machine...), Agents: map[string][]Point{}},
 		Support: Support{OS: runtime.GOOS, PerProcess: sysinfo.PerProcess, DiskQueue: m.sample.Machine.DiskQueue >= 0}}
 	for id, h := range m.history.Agents {

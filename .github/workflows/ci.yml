@@ -150,6 +150,13 @@ jobs:
           certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n "tmx e2e CA" -i ca.pem
           echo "TMXG_E2E_TLS_DIR=$d" >> "$GITHUB_ENV"
       - run: cd ui && node --test --test-concurrency=1 e2e/*.e2e.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phone-notifications-and-living-cell
+          path: ui/screenshots/*.png
+          if-no-files-found: error
+          retention-days: 7
   # macOS is a first-class target: most users are on Macs. It is free here, so it runs
   # on every snapshot, like Linux and Windows. The app is built UNSIGNED (ad hoc, SIGN_IDENTITY "-"):
   # the signing certificate stays private and is used only by the private release build.

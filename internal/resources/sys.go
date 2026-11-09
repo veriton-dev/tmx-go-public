@@ -1,6 +1,10 @@
 package resources
 
-import "github.com/blackcode-ch/tmx-go/internal/sysinfo"
+import (
+	"os"
+
+	"github.com/blackcode-ch/tmx-go/internal/sysinfo"
+)
 
 // Sys is the measuring layer: sysinfo on this machine, a fake in tests.
 type Sys interface {
@@ -20,3 +24,5 @@ func (osSys) Machine() (sysinfo.Machine, error)          { return sysinfo.Machin
 func (osSys) Disks() ([]sysinfo.Disk, error)             { return sysinfo.Disks() }
 func (osSys) DiskSpace(p string) (uint64, uint64, error) { return sysinfo.DiskSpace(p) }
 func (osSys) ResumeProcs(l []sysinfo.Proc) int           { return sysinfo.ResumeProcs(l) }
+
+func tempDir() string { return os.TempDir() }

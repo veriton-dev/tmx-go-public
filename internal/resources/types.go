@@ -80,5 +80,6 @@ type View struct {
 	History History          `json:"history"`
 	Slots   slots.View       `json:"slots"`
 	Cost    Cost             `json:"cost"`
+	Protect ProtectView      `json:"protect"`
 	Support Support          `json:"support"`
 }

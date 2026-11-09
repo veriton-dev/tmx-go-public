@@ -11,7 +11,7 @@ const PerProcess = false
 func ProcUsage(int) (Usage, bool) { return Usage{}, false }
 
 func MachineStats() (Machine, error) {
-	return Machine{Cores: ncpu(), MemTotal: memTotal(), MemFree: memFree()}, ErrUnsupported
+	return Machine{Cores: ncpu(), MemTotal: memTotal(), MemFree: memFree(), CommitRAMBased: true}, ErrUnsupported
 }
 
 func Disks() ([]Disk, error) { return nil, ErrUnsupported }

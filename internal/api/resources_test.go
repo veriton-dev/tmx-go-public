@@ -92,3 +92,25 @@ func TestSlotsAPI(t *testing.T) {
 		t.Fatalf("renew unknown: %d", s)
 	}
 }
+
+func TestHealthShowsMachineProtection(t *testing.T) {
+	d := apitest.New(t)
+	var h struct {
+		MemGuard struct {
+			Enabled bool   `json:"enabled"`
+			Level   string `json:"level"`
+		} `json:"memguard"`
+		DiskReserve struct {
+			Mode  string `json:"mode"`
+			State string `json:"state"`
+		} `json:"disk_reserve"`
+	}
+	if (client{t: t, base: d.URL}).do("GET", "/api/health", nil, &h) != 200 || !h.MemGuard.Enabled || h.MemGuard.Level == "" ||
+		h.DiskReserve.Mode != "on" || h.DiskReserve.State == "" {
+		t.Fatalf("health: %+v", h)
+	}
+	var v resources.View
+	if (client{t: t, base: d.URL, token: d.OwnerToken}).do("GET", "/api/resources", nil, &v) != 200 || v.Protect.DiskReserve.Mode != "on" {
+		t.Fatalf("protect in the resources view: %+v", v.Protect)
+	}
+}

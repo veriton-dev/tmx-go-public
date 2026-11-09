@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"sort"
 )
 
@@ -33,6 +34,10 @@ type Resources struct {
 	DiskBusySecs        int     `json:"disk_busy_secs"`        //
 	DiskAgentMBs        float64 `json:"disk_agent_mb_s"`       //
 	SaturationPauseSecs int     `json:"saturation_pause_secs"` //
+
+	// MemGuard and DiskReserve: the machine-protection guards (protect.go).
+	MemGuard    MemGuard    `json:"memguard"`
+	DiskReserve DiskReserve `json:"disk_reserve"`
 
 	// Slots: machine-wide counting semaphores for heavy work (tmx slot).
 	Slots map[string]int `json:"slots"`
@@ -94,6 +99,8 @@ func (r *Resources) Normalize() {
 		}
 	}
 	r.Slots = slots
+	r.MemGuard.normalize()
+	r.DiskReserve.normalize()
 	if len(r.Exempt) == 0 {
 		r.Exempt = nil
 	}
@@ -109,6 +116,12 @@ func (r Resources) Validate() error {
 			return fmt.Errorf("slot %q must have 1 to 64 places", k)
 		}
 	}
+	if err := r.MemGuard.validate(); err != nil {
+		return err
+	}
+	if err := r.DiskReserve.validate(); err != nil {
+		return err
+	}
 	if r.DailyWriteGB > 100_000 || r.MemoryCapMB > 10_000_000 || r.MaxAgents > 1000 {
 		return fmt.Errorf("a limit is out of range")
 	}
@@ -119,6 +132,11 @@ func (r Resources) Validate() error {
 func (r Resources) Clone() Resources {
 	r.Slots = maps.Clone(r.Slots)
 	r.Exempt = maps.Clone(r.Exempt)
+	r.MemGuard.CriticalAgents = slices.Clone(r.MemGuard.CriticalAgents)
+	if r.MemGuard.Enabled != nil {
+		on := *r.MemGuard.Enabled
+		r.MemGuard.Enabled = &on
+	}
 	return r
 }
 

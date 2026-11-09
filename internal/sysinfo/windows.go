@@ -136,6 +136,10 @@ func MachineStats() (Machine, error) {
 		return m, e
 	}
 	m.MemTotal, m.MemFree = ms.TotalPhys, ms.AvailPhys
+	m.CommitFree, m.CommitKnown = ms.AvailPageFile, true // CommitLimit - CommitTotal
+	if v, ok := pagesInPerSec(); ok {
+		m.Pressure = Pressure{Kind: PressurePagesIn, Value: v}
+	}
 	return m, nil
 }
 

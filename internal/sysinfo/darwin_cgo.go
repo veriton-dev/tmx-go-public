@@ -123,7 +123,7 @@ func MachineStats() (Machine, error) {
 		total += time.Duration(t) * tick
 	}
 	return Machine{CPUBusy: total - idle, CPUTotal: total, Cores: ncpu(),
-		MemTotal: memTotal(), MemFree: memFree()}, nil
+		MemTotal: memTotal(), MemFree: memFree(), CommitRAMBased: true}, nil
 }
 
 // Disks reads every block storage driver's statistics (IOKit, no root needed).

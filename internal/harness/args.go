@@ -337,5 +337,12 @@ func CodexAppServerArgs(spec runner.Spec) []string {
 	args = append(args, "-c", "sandbox_mode="+tomlString(sandbox), "-c", "approval_policy="+tomlString(approval))
 	args = append(args, CodexSandboxArgs(spec)...)
 	args = append(args, codexMCPArgs(spec.MCP, spec.CodexGuardHome == "")...)
+	// The support installer explicitly authorizes chat on the assigned owner DM.
+	// Go MCP still enforces agent/chat membership; no command approval changes.
+	if spec.Name == "support-agent" && spec.CodexGuardHome != "" && spec.MCP != nil && !spec.CodexFullAccess {
+		args = append(args,
+			"-c", `mcp_servers.tmxg.tools.chat_read.approval_mode="approve"`,
+			"-c", `mcp_servers.tmxg.tools.chat_send.approval_mode="approve"`)
+	}
 	return append(args, spec.ExtraArgs...)
 }

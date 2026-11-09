@@ -22,6 +22,7 @@ type fakeSys struct {
 	mach    sysinfo.Machine
 	disk    sysinfo.Disk
 	resumed [][]sysinfo.Proc
+	free    uint64 // DiskSpace free bytes; 0 = 100 GB
 }
 
 func (s *fakeSys) Procs() ([]sysinfo.Proc, error) {
@@ -45,7 +46,14 @@ func (s *fakeSys) Disks() ([]sysinfo.Disk, error) {
 	defer s.mu.Unlock()
 	return []sysinfo.Disk{s.disk}, nil
 }
-func (s *fakeSys) DiskSpace(string) (uint64, uint64, error) { return 100 * GB, 500 * GB, nil }
+func (s *fakeSys) DiskSpace(string) (uint64, uint64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.free > 0 {
+		return s.free, 500 * GB, nil
+	}
+	return 100 * GB, 500 * GB, nil
+}
 func (s *fakeSys) ResumeProcs(l []sysinfo.Proc) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -310,7 +318,7 @@ func TestAdmit(t *testing.T) {
 	if ok, why := r.m.Admit(3); ok || why != "3 of 3 agents running" {
 		t.Fatalf("3 of 3: %v %q", ok, why)
 	}
-	r.sys.mach.MemFree = 1800 * MB
+	r.sys.mach.MemTotal, r.sys.mach.MemFree = 8*GB, 1800*MB // 22% RAM: memguard only warns
 	r.step()
 	if ok, _ := r.m.Admit(0); !ok {
 		t.Fatal("1.8 GB free admits one")

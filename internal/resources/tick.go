@@ -21,6 +21,7 @@ type action struct {
 	id, name       string
 	reason, detail string
 	ask            bool
+	onDone         func(paused bool) // a brake: told whether the agent was really paused (outside the lock)
 }
 
 // Tick takes one sample, applies the brakes, pumps the launch queue and publishes the
@@ -61,6 +62,7 @@ func (m *Manager) Tick() {
 		path = "."
 	}
 	dfree, dtotal, _ := m.sys.DiskSpace(path)
+	vols := m.readVolumes(path, agents)
 	healthy := merr == nil && derr == nil
 	m.staleAfter.Store(int64(3 * m.interval()))
 	if healthy {
@@ -71,7 +73,9 @@ func (m *Manager) Tick() {
 
 	m.mu.Lock()
 	m.clearWatchdogRestorationsLocked()
+	m.prot.read = vols
 	acts := m.evaluateLocked(now, trees, mach, disks, derr == nil && !unsupported)
+	var dropped []action
 	if !healthy {
 		kept := acts[:0]
 		for _, a := range acts {
@@ -79,16 +83,28 @@ func (m *Manager) Tick() {
 				kept = append(kept, a)
 			} else {
 				delete(m.diskTurns, a.id)
+				dropped = append(dropped, a)
 			}
 		}
 		acts = kept
 	}
+	guardEvents := m.prot.pending
+	m.prot.pending = nil
 	mu := &m.sample.Machine
 	mu.DiskFree, mu.DiskTotal, mu.DiskPath = dfree, dtotal, path
 	mu.Running, mu.Queued, mu.Paused = running, queued, paused
 	sample := cloneSample(m.sample)
 	m.mu.Unlock()
 
+	for _, a := range dropped {
+		if a.onDone != nil {
+			a.onDone(false)
+		}
+	}
+	for _, e := range guardEvents {
+		m.log.Warn("guard", "kind", e.Kind, "agent", e.Agent, "volume", e.Volume, "detail", e.Detail)
+		m.fleet.Publish(model.BusEvent{Type: model.EvResourcesGuard, Data: e})
+	}
 	m.apply(acts)
 	m.fleet.PumpQueue()
 	m.fleet.Publish(model.BusEvent{Type: model.EvResourcesSampled, Data: sample})
@@ -224,6 +240,19 @@ func (m *Manager) evaluateLocked(now time.Time, trees []tree, mach sysinfo.Machi
 		}
 	}
 
+	taken := map[string]bool{}
+	for _, a := range acts {
+		if a.brake {
+			taken[a.id] = true
+		}
+	}
+	for id := range m.prot.braked { // forget what the owner resumed or what stopped by itself
+		if a, ok := live[id]; !ok || a.State != model.StatePaused {
+			delete(m.prot.braked, id)
+		}
+	}
+	acts = append(acts, m.protectLocked(now, mach, trees, usage, taken)...)
+
 	// History and the sample.
 	m.history.Machine = appendPoint(m.history.Machine, Point{T: nowMs, CPU: float32(mu.CPU), Mem: mu.MemFree, W: float32(max(mu.DiskWriteRate, 0))})
 	for _, u := range usage[:len(trees)] {
@@ -328,11 +357,17 @@ func (m *Manager) apply(acts []action) {
 			}
 			m.mu.Unlock()
 			m.log.Warn("brake", "agent", a.name, "reason", a.reason, "err", err)
+			if a.onDone != nil {
+				a.onDone(false)
+			}
 			continue
 		}
 		m.led.Paused[a.id] = procs
 		m.dirty = true
 		m.mu.Unlock()
+		if a.onDone != nil {
+			a.onDone(true)
+		}
 		m.save(true) // a crash must not leave these processes paused for good
 	}
 }

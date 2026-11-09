@@ -41,6 +41,28 @@ type Machine struct {
 	Cores    int
 	MemTotal uint64
 	MemFree  uint64 // available for new work without swapping (OS estimate)
+	// CommitFree is the headroom before allocations fail: Windows CommitLimit-CommitTotal,
+	// Linux MemAvailable+SwapFree. CommitKnown false = this build cannot tell (macOS).
+	CommitFree  uint64
+	CommitKnown bool
+	// CommitRAMBased marks RAM-plus-swap headroom, whose default guard floors
+	// scale with physical RAM. False preserves absolute commit-limit floors.
+	// The reader supplies this semantic so injected readings are host-independent.
+	CommitRAMBased bool
+	// Pressure is the OS's paging signal; it only gates the stop level (with RAM low).
+	Pressure Pressure
+}
+
+// Pressure kinds.
+const (
+	PressurePagesIn = "pages_in" // Windows: hard page faults per second (Memory\Pages Input/sec)
+	PressurePSI     = "psi"      // Linux: /proc/pressure/memory "some avg10", percent
+)
+
+// Pressure is one reading of the OS's paging signal; Kind "" = not available here.
+type Pressure struct {
+	Kind  string
+	Value float64
 }
 
 // Disk is one physical disk's cumulative counters.

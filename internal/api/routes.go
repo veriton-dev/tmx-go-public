@@ -124,6 +124,12 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		v["governor_degraded"] = s.jobs.Degraded()
 		v["job_persistence_healthy"] = s.jobs.PersistenceHealthy()
 	}
+	if s.res != nil {
+		// Levels only (no agent or volume names): health is public. The same keys Python's
+		// /api/health answers: memguard {enabled, level}, plus the disk reserve's mode and state.
+		h := s.res.Health()
+		v["memguard"], v["disk_reserve"] = h.MemGuard, h.DiskReserve
+	}
 	if s.updater != nil {
 		// A bool only, no reason: health is public and peers read it. False = updates are off
 		// because the pinned release keys or the require policy are invalid.

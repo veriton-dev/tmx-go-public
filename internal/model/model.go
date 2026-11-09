@@ -672,6 +672,7 @@ const (
 	EvMessageCreated   = "message.created"
 	EvMessageUpdated   = "message.updated"
 	EvResourcesSampled = "resources.sampled" // data: resources.Sample (every few seconds)
+	EvResourcesGuard   = "resources.guard"   // data: resources.GuardEvent (memory guard / disk reserve)
 	EvSlotsUpdated     = "slots.updated"     // data: slots.View
 	EvCompanionTask    = "companion.task"    // data: CompanionTask (new or changed)
 	EvThreadUpdated    = "thread.updated"    // data: Thread (new or changed)

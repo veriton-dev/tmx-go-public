@@ -94,7 +94,7 @@ func ProcUsage(pid int) (Usage, bool) {
 
 // MachineStats reads /proc/stat and /proc/meminfo.
 func MachineStats() (Machine, error) {
-	m := Machine{Cores: runtime.NumCPU()}
+	m := Machine{Cores: runtime.NumCPU(), CommitRAMBased: true}
 	b, err := os.ReadFile("/proc/stat")
 	if err != nil {
 		return m, err
@@ -121,6 +121,7 @@ func MachineStats() (Machine, error) {
 	if err != nil {
 		return m, err
 	}
+	var swapFree uint64
 	sc := bufio.NewScanner(bytes.NewReader(b))
 	for sc.Scan() {
 		k, v, ok := strings.Cut(sc.Text(), ":")
@@ -133,9 +134,34 @@ func MachineStats() (Machine, error) {
 			m.MemTotal = n << 10
 		case "MemAvailable":
 			m.MemFree = n << 10
+			m.CommitKnown = true
+		case "SwapFree":
+			swapFree = n << 10
+		}
+	}
+	m.CommitFree = m.MemFree + swapFree
+	if b, err := os.ReadFile("/proc/pressure/memory"); err == nil { // absent on old kernels: no signal
+		if v, ok := parsePSI(string(b)); ok {
+			m.Pressure = Pressure{Kind: PressurePSI, Value: v}
 		}
 	}
 	return m, nil
+}
+
+// parsePSI returns the "some avg10" figure of /proc/pressure/memory.
+func parsePSI(text string) (float64, bool) {
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.HasPrefix(line, "some ") {
+			continue
+		}
+		for _, part := range strings.Fields(line) {
+			if v, ok := strings.CutPrefix(part, "avg10="); ok {
+				f, err := strconv.ParseFloat(v, 64)
+				return f, err == nil
+			}
+		}
+	}
+	return 0, false
 }
 
 // Disks reads /proc/diskstats for whole disks (/sys/block entries, no partitions or
